@@ -32,3 +32,8 @@ echo
 echo PID files
 echo =========
 ls -alF /var/run/redis
+echo
+
+echo Database dumps
+echo ==============
+ls -alF /var/lib/redis

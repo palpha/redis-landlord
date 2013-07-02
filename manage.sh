@@ -226,15 +226,17 @@ case $cmd in
   # chmod g+w /etc/redis /etc/init.d/redis-{available,enabled} /var/run/redis
   echo OK
 
+  echo Starting landlord ...
   /etc/init.d/redis-landlord start
+
+  sleep 1
+
+  echo Log says:
+  tail -1 /var/log/redis/landlord.log
+
   ;;
 
 'uninstall'*)
-  if [[ ! -x /etc/init.d/redis-landlord ]]; then
-    echoerr Landlord not installed or installation broken.
-    exit 6
-  fi
-
   if [[ $id == 'hard' ]]; then
     echo 'Removing all traces of tenancy ...'
 
@@ -270,6 +272,9 @@ case $cmd in
       cp install/backup/db/* /var/lib/redis
     fi
     echo OK
+  elif [[ ! -x /etc/init.d/redis-landlord ]]; then
+    echoerr Landlord not installed or installation broken.
+    exit 6
   else
     echo 'Leaving Redis configuration, logs and databases.'
   fi
