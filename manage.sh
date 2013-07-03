@@ -1,5 +1,10 @@
 #!/bin/bash
 
+# To do:
+#   update-rc.d
+#   thread safety
+#   PubSub instead of HTTP
+
 # exit codes:
 # 1) invalid command
 # 2) invalid id
@@ -12,12 +17,12 @@
 
 set -e
 
+isinstalled=([ -x /etc/init.d/redis-landlord ])
+
 echoerr() { echo "$@" 1>&2; }
 exists() { ls -U $1 &> /dev/null; }
-installed() { test -x /etc/init.d/redis-landlord; }
 ensureinstalled() {
-  installed
-  if [[ ! $? ]]; then
+  if [[ ! $isinstalled ]]; then
     echoerr Landlord not installed.
     echo "Run \"`basename \"$0\"` install\"."
     exit 6
@@ -33,7 +38,18 @@ ensureinstexists() {
 }
 
 pinginst() {
-  [[ "`redis-cli -a $1 -p $2 ping`" == 'PONG' ]]
+  i=0
+  while :
+  do
+    echo Pinging
+    set +e
+    r=( [[ "`redis-cli -a $1 -p $2 ping`" == 'PONG' ]] )
+    n=( [[ `let i++` -gt 10 ]] )
+    set -e
+    $r && return 1
+    $n && return 0
+    sleep 0.1
+  done
 }
 
 cmds=("install" "uninstall" "setup" "disable" "enable" "delete")
@@ -82,9 +98,9 @@ validateid() {
   fi
 }
 
-case $cmd in
+case "$cmd" in
 # setup <id> <port>
-'setup')
+setup)
   ensureinstalled
   validateid
   if [[ -x "/etc/init.d/redis-available/$id" ]]; then
@@ -119,18 +135,11 @@ case $cmd in
   if [[ ! $? ]]; then
     echo OK
   else
-    echo -n "waiting a while longer ... "
-    sleep 5
-    pinginst $id $port
-    if [[ ! $? ]]; then
-      echo NOT OK
-      echo -n "Cleaning up ... "
-      rm $confdir/tenant-$id.conf
-      rm $enabled/$id
-      rm $available/$id
-    else
-      echo OK
-    fi
+    echo NOT OK
+    echo -n "Cleaning up ... "
+    rm $confdir/tenant-$id.conf
+    rm $enabled/$id
+    rm $available/$id
   fi
 
   echo Log says:
@@ -138,7 +147,7 @@ case $cmd in
   
   ;;
 
-'disable'*)
+disable)
   ensureinstalled
   validateid
   ensureinstexists $id
@@ -152,7 +161,7 @@ case $cmd in
   /etc/init.d/redis-enabled/$id stop && rm $enabled/$id
   ;;
 
-'enable'*)
+enable)
   ensureinstalled
   validateid
   ensureinstexists $id
@@ -167,7 +176,7 @@ case $cmd in
   echo "$id enabled."
   ;;
 
-'delete'*)
+delete)
   ensureinstalled
   validateid
   ensureinstexists $id
@@ -180,39 +189,44 @@ case $cmd in
   echo OK
   ;;
 
-'install'*)
-  if [[ -x /etc/init.d/redis-landlord && $id != 'force' ]]; then
+install)
+  if $isinstalled && [[ $id != 'force' ]]; then
     echoerr Landlord already installed, you probably want to uninstall first.
     exit 5
   fi
 
-  test -x /etc/init.d/redis-landlord && /etc/init.d/redis-landlord stop
-  test -x /etc/init.d/redis-tenants && /etc/init.d/redis-tenants stop
+  [[ -x /etc/init.d/redis-landlord ]] && /etc/init.d/redis-landlord stop
+  [[ -x /etc/init.d/redis-tenants ]] && /etc/init.d/redis-tenants stop
 
   echo -n 'Backing up existing files ... '
+
+  # prep backup dirs
   for dir in install/backup{,/{init.d,conf,db}}; do
     [[ ! -d $dir ]] && mkdir $dir
   done
+
+  # init scripts
   for file in /etc/init.d/redis-{landlord,server-base,tenants}; do
-    test -f $file && cp $file install/backup/init.d
+    [[ -f $file ]] && cp $file install/backup/init.d
   done
-  test -f /etc/redis/landlord.conf && cp /etc/redis/landlord.conf install/backup/conf
-  if exists /etc/redis/tenant-*.conf; then
-    cp /etc/redis/tenant-*.conf install/backup/conf
-  fi
+
+  # config
+  [[ -f /etc/redis/landlord.conf ]] && cp /etc/redis/landlord.conf install/backup/conf
+  exists /etc/redis/tenant-*.conf && cp /etc/redis/tenant-*.conf install/backup/conf
+
+  # databases
   for file in /var/lib/redis/landlord.{aof,rdb}; do
     test -f $file && cp $file install/backup/db
   done
-  if exists /var/lib/redis/tenant-*; then
-    cp /var/lib/redis/tenant-* install/backup/db
-  fi
+  exists /var/lib/redis/tenant-* && cp /var/lib/redis/tenant-* install/backup/db
+
   echo OK
 
-  echo -n 'Copying init scripts ... '
+  echo -n 'Writing init scripts ... '
   cp install/redis-{landlord,server-base,tenants} /etc/init.d
   echo OK
 
-  echo -n 'Copying configuration ... '
+  echo -n 'Writing configuration ... '
   cp install/landlord.conf /etc/redis
   echo OK
 
@@ -222,21 +236,21 @@ case $cmd in
   for dir in /etc/init.d/redis-{available,enabled}; do
     [[ ! -d $dir ]] && mkdir $dir
   done
-  # chown redis:redis /etc/redis /etc/init.d/redis-{available,enabled}
-  # chmod g+w /etc/redis /etc/init.d/redis-{available,enabled} /var/run/redis
   echo OK
 
   echo Starting landlord ...
   /etc/init.d/redis-landlord start
 
-  sleep 1
+  echo -n 'Pinging landlord instance ... '
+  pinginst
+  [[ ! $? ]] && echo NOT OK || echo OK
 
   echo Log says:
   tail -1 /var/log/redis/landlord.log
 
   ;;
 
-'uninstall'*)
+uninstall)
   if [[ $id == 'hard' ]]; then
     echo 'Removing all traces of tenancy ...'
 
