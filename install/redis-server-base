@@ -2,23 +2,18 @@
 
 PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
 DAEMON=/usr/bin/redis-server
-# DAEMON_ARGS=/etc/redis/landlord.conf
-# NAME=redis-landlord
-# DESC=redis-landlord
-
 RUNDIR=/var/run/redis
-# PIDFILE=$RUNDIR/redis-landlord.pid
 
 test -x $DAEMON || exit 0
-
-if [ -r /etc/default/$NAME ]
-then
-        . /etc/default/$NAME
-fi
 
 set -e
 
 run() {
+	if [ -r /etc/default/$NAME ]
+	then
+	        . /etc/default/$NAME
+	fi
+
 	case "$1" in
 	  start)
 		echo -n "Starting $DESC: "
