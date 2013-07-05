@@ -86,8 +86,10 @@ case $cmd in
   echo -n 'Backing up existing files ... '
   mkdir install/backup/{init.d,conf,db}
   cp /etc/init.d/redis-{server{,-base},tenants} install/backup/init.d
-  cp /etc/redis/{redis,tenant-*}.conf install/backup/conf
-  cp /var/lib/redis/{main,tenant-*}.{aof,rdb} install/backup/db
+  cp /etc/redis/redis.conf install/backup/conf
+  cp /etc/redis/tenant-*.conf install/backup/conf
+  cp /var/lib/redis/main.{aof,rdb} install/backup/db
+  cp /var/lib/redis/tenant-*.{aof,rdb} install/backup/db
 
   echo -n 'Copying init scripts ... '
   cp install/redis-{server{,-base},tenants} /etc/init.d
