@@ -121,7 +121,7 @@ case $cmd in
     rm /etc/redis/redis.conf
     rm /etc/redis/tenant-*.conf
     echo "OK\n"
-    
+
     echo -n 'Restoring configuration and databases ... '
     cp install/backup/conf/* /etc/redis
     cp install/backup/db/* /var/lib/redis
@@ -132,7 +132,7 @@ case $cmd in
     ;;
 
   esac
-  
+
   echo -n 'Deleting init scripts ... '
   rm /etc/init.d/redis-{server{,-base},tenants}
   echo "OK\n"
