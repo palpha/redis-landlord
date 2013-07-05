@@ -92,21 +92,21 @@ case $cmd in
 'install'*)
   ensuresudo
 
-  test -x /etc/init.d/redis-server && /etc/init.d/redis-server stop
+  test -x /etc/init.d/redis-landlord && /etc/init.d/redis-landlord stop
   test -x /etc/init.d/redis-tenants && /etc/init.d/redis-tenants stop
 
   echo -n 'Backing up existing files ... '
   for dir in install/backup{,/{init.d,conf,db}}; do
     [[ ! -d $dir ]] && mkdir $dir
   done
-  for file in /etc/init.d/redis-{server{,-base},tenants}; do
+  for file in /etc/init.d/redis-{landlord,server-base,tenants}; do
     test -f $file && cp $file install/backup/init.d
   done
-  test -f /etc/redis/redis.conf && cp /etc/redis/redis.conf install/backup/conf
+  test -f /etc/redis/landlord.conf && cp /etc/redis/landlord.conf install/backup/conf
   if ls -U /var/lib/redis/tenant-*.conf &> /dev/null; then
     cp /etc/redis/tenant-*.conf install/backup/conf
   fi
-  for file in /var/lib/redis/main.{aof,rdb}; do
+  for file in /var/lib/redis/landlord.{aof,rdb}; do
     test -f $file && cp $file install/backup/db
   done
   if ls -U /var/lib/redis/tenant-* &> /dev/null; then
@@ -115,16 +115,16 @@ case $cmd in
   echo OK
 
   echo -n 'Copying init scripts ... '
-  cp install/redis-{server{,-base},tenants} /etc/init.d
+  cp install/redis-{landlord,server-base,tenants} /etc/init.d
   echo OK
 
   echo -n 'Copying configuration ... '
-  cp install/redis.conf /etc/redis
+  cp install/landlord.conf /etc/redis
   echo OK
 
   echo -n 'Setting ownership and permissions ... '
-  chown root:root /etc/init.d/redis-{server{,-base},tenants}
-  chmod a+x /etc/init.d/redis-{server{,-base},tenants}
+  chown root:root /etc/init.d/redis-{landlord,server-base,tenants}
+  chmod a+x /etc/init.d/redis-{landlord,server-base,tenants}
   for dir in /etc/init.d/redis-{available,enabled}; do
     [[ ! -d $dir ]] && mkdir $dir
   done
@@ -136,17 +136,15 @@ case $cmd in
 'uninstall'*)
   ensuresudo
 
-  echo 'Helo.'
-
   if [[ $id == 'hard' ]]; then
     echo -n 'Removing all traces of tenancy ... '
+    /etc/init.d/redis-landlord stop
     /etc/init.d/redis-tenants stop
-    /etc/init.d/redis-server stop
-    rm /var/log/redis/main.log
+    rm /var/log/redis/landlord.log
     rm /var/log/redis/tenant-*.log
-    rm /var/lib/redis/main.{aof,rdb}
+    rm /var/lib/redis/landlord.{aof,rdb}
     rm /var/lib/redis/tenant-*.{aof,rdb}
-    rm /etc/redis/redis.conf
+    rm /etc/redis/landlord.conf
     rm /etc/redis/tenant-*.conf
     echo OK
 
@@ -160,7 +158,7 @@ case $cmd in
   esac
 
   echo -n 'Deleting init scripts ... '
-  rm /etc/init.d/redis-{server{,-base},tenants}
+  rm /etc/init.d/redis-{landlord,server-base,tenants}
   echo OK
 
   echo -n 'Restoring init scripts ... '

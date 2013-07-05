@@ -1,6 +1,7 @@
 #!/bin/bash
 enabled=/etc/init.d/redis-enabled
 
+/etc/init.d/redis-main $1
 for file in `ls -1 $enabled`; do
   file="$enabled/$file"
   test -x $file && . $file && run $1
