@@ -23,14 +23,17 @@ ensureinstalled() {
     exit 6
   fi
 }
-instexists() { test -x /etc/init.d/redis-available/$1; }
+
 ensureinstexists() {
-  instexists $1
-  if [[ ! $? ]]; then
+  if [[ ! -x "/etc/init.d/redis-available/$1" ]]; then
     echoerr $id does not exist.
     echo "Run \"`basename \"$0\"` setup $id <port>\" to create."
     exit 9
   fi
+}
+
+pinginst() {
+  [[ "`redis-cli -a $1 -p $2 ping`" == 'PONG' ]]
 }
 
 cmds=("install" "uninstall" "setup" "disable" "enable" "delete")
@@ -72,13 +75,19 @@ if [[ ! " ${cmds[@]} " =~ " ${cmd//[^a-z]/} " ]]; then
   exit 1
 fi
 
-[[ ! $id =~ ^[a-z0-9]*$ ]] && echoerr Invalid id. && exit 2
+validateid() {
+  if [[ ! $id =~ ^[a-z0-9]*$ || $id == "" ]]; then
+    echoerr 'Invalid id.'
+    exit 2
+  fi
+}
 
 case $cmd in
 # setup <id> <port>
 'setup')
   ensureinstalled
-  if [[ $(instexists) ]]; then
+  validateid
+  if [[ -x "/etc/init.d/redis-available/$id" ]]; then
     echoerr $id already exists.
     echo "Run \"`basename \"$0\"` enable\" to enable."
     exit 7
@@ -102,10 +111,36 @@ case $cmd in
 
   echo Running bootstrapper ...
   $bootstrapper start
+
+  echo -n 'Pinging new instance ... '
+  sleep 1
+
+  pinginst $id $port
+  if [[ ! $? ]]; then
+    echo OK
+  else
+    echo -n "waiting a while longer ... "
+    sleep 5
+    pinginst $id $port
+    if [[ ! $? ]]; then
+      echo NOT OK
+      echo -n "Cleaning up ... "
+      rm $confdir/tenant-$id.conf
+      rm $enabled/$id
+      rm $available/$id
+    else
+      echo OK
+    fi
+  fi
+
+  echo Log says:
+  tail -1 /var/log/redis/tenant-$id.log
+  
   ;;
 
 'disable'*)
   ensureinstalled
+  validateid
   ensureinstexists $id
 
   if [[ ! -x "$enabled/$id" ]]; then
@@ -119,6 +154,7 @@ case $cmd in
 
 'enable'*)
   ensureinstalled
+  validateid
   ensureinstexists $id
 
   echo -n "Enabling instance $id ..."
@@ -127,13 +163,18 @@ case $cmd in
 
   echo Running bootstrapper ...
   $bootstrapper start
+
+  echo "$id enabled."
   ;;
 
 'delete'*)
   ensureinstalled
+  validateid
   ensureinstexists $id
 
-  ./$0 disable $id
+  set +e
+  $0 disable $id
+  set -e
   echo -n "Deleting instance $id ... "
   rm $available/$id
   echo OK
