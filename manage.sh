@@ -9,7 +9,12 @@
 set -e
 
 echoerr() { echo "$@" 1>&2; }
-ensuresudo() { [[ ! `whoami` == 'root' ]] && echoerr Sudo, please. && exit 4; }
+ensuresudo() {
+  if [[ ! `whoami` == 'root' ]]; then
+    echoerr Sudo, please.
+    exit 4
+  fi
+}
 
 cmds=("install" "uninstall" "setup" "disable" "enable" "delete")
 cmd=$1
@@ -24,9 +29,16 @@ if [[ ! " ${cmds[@]} " =~ " ${cmd//[^a-z]/} " ]]; then
   IFS=','
   echo "Usage: $0 <command> [arg [arg...]]"
   cmds="${cmds[*]}"
-  echo "Command is one of the following: ${cmds//,/, }"
-  echo "Command arguments:"
-  echo "  setup <id> <port>"
+  echo "Commands:"
+  echo "  setup <id> <port>  Sets up an instance."
+  echo "  disable <id>       Disables an instance"
+  echo "  enable <id>        Enables a previously disabled instance."
+  echo "  delete <id>        Deletes an instance."
+  echo "  install            Installs init scripts and Redis"
+  echo "                     configuration. Use with care."
+  echo "  uninstall [hard]   Uninstalls init scripts, and optionally"
+  echo "                     everything else (if hard). Use with"
+  echo "                     extreme care."
   IFS=$old_ifs
   exit 1
 fi
@@ -80,39 +92,53 @@ case $cmd in
 'install'*)
   ensuresudo
 
-  /etc/init.d/redis-server stop
+  test -x /etc/init.d/redis-server && /etc/init.d/redis-server stop
   test -x /etc/init.d/redis-tenants && /etc/init.d/redis-tenants stop
 
   echo -n 'Backing up existing files ... '
-  mkdir install/backup/{init.d,conf,db}
-  cp /etc/init.d/redis-{server{,-base},tenants} install/backup/init.d
-  cp /etc/redis/redis.conf install/backup/conf
-  cp /etc/redis/tenant-*.conf install/backup/conf
-  cp /var/lib/redis/main.{aof,rdb} install/backup/db
-  cp /var/lib/redis/tenant-*.{aof,rdb} install/backup/db
+  for dir in install/backup{,/{init.d,conf,db}}; do
+    [[ ! -d $dir ]] && mkdir $dir
+  done
+  for file in /etc/init.d/redis-{server{,-base},tenants}; do
+    test -f $file && cp $file install/backup/init.d
+  done
+  test -f /etc/redis/redis.conf && cp /etc/redis/redis.conf install/backup/conf
+  if ls -U /var/lib/redis/tenant-*.conf &> /dev/null; then
+    cp /etc/redis/tenant-*.conf install/backup/conf
+  fi
+  for file in /var/lib/redis/main.{aof,rdb}; do
+    test -f $file && cp $file install/backup/db
+  done
+  if ls -U /var/lib/redis/tenant-* &> /dev/null; then
+    cp /var/lib/redis/tenant-* install/backup/db
+  fi
+  echo OK
 
   echo -n 'Copying init scripts ... '
   cp install/redis-{server{,-base},tenants} /etc/init.d
-  echo "OK\n"
+  echo OK
 
   echo -n 'Copying configuration ... '
   cp install/redis.conf /etc/redis
-  echo "OK\n"
+  echo OK
 
   echo -n 'Setting ownership and permissions ... '
   chown root:root /etc/init.d/redis-{server{,-base},tenants}
   chmod a+x /etc/init.d/redis-{server{,-base},tenants}
-  mkdir /etc/init.d/redis-{available,enabled}
+  for dir in /etc/init.d/redis-{available,enabled}; do
+    [[ ! -d $dir ]] && mkdir $dir
+  done
   chown redis:redis /etc/init.d/redis-{available,enabled}
   chmod g+w /etc/redis /etc/init.d/redis-{available,enabled} /var/run/redis
-  echo "OK\n"
+  echo OK
   ;;
 
 'uninstall'*)
   ensuresudo
 
-  case "$id" in
-  'hard'*)
+  echo 'Helo.'
+
+  if [[ $id == 'hard' ]]; then
     echo -n 'Removing all traces of tenancy ... '
     /etc/init.d/redis-tenants stop
     /etc/init.d/redis-server stop
@@ -122,26 +148,24 @@ case $cmd in
     rm /var/lib/redis/tenant-*.{aof,rdb}
     rm /etc/redis/redis.conf
     rm /etc/redis/tenant-*.conf
-    echo "OK\n"
+    echo OK
 
     echo -n 'Restoring configuration and databases ... '
     cp install/backup/conf/* /etc/redis
     cp install/backup/db/* /var/lib/redis
-    ;;
-
-  *)
+  else
     echo 'Leaving Redis configuration, logs and databases.'
-    ;;
+  fi
 
   esac
 
   echo -n 'Deleting init scripts ... '
   rm /etc/init.d/redis-{server{,-base},tenants}
-  echo "OK\n"
+  echo OK
 
   echo -n 'Restoring init scripts ... '
   cp install/backup/init.d/* /etc/init.d
-  echo "OK\n"
+  echo OK
   ;;
 
 esac
