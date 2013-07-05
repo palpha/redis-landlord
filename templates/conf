@@ -1,4 +1,4 @@
-include <confdir>/redis.conf
+include <confdir>/landlord.conf
 dbfilename tenant-<id>.rdb
 appendfilename tenant-<id>.aof
 requirepass <id>
