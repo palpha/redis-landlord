@@ -4,12 +4,14 @@
 # 1) invalid command
 # 2) invalid id
 # 3) invalid port
+# 4) sudo required
 
 set -e
 
 echoerr() { echo "$@" 1>&2; }
+ensuresudo() { [[ ! `whoami` == 'root' ]] && echoerr Sudo, please. && exit 4 }
 
-cmds=("setup" "disable" "enable" "delete")
+cmds=("install" "uninstall" "setup" "disable" "enable" "delete")
 cmd=$1
 id=$2
 available=/etc/init.d/redis-available
@@ -73,6 +75,70 @@ case $cmd in
   echo -n "Deleting instance $id ... "
   rm $available/$id
   echo OK
+  ;;
+
+'install'*)
+  ensuresudo
+
+  /etc/init.d/redis-server stop
+  test -x /etc/init.d/redis-tenants && /etc/init.d/redis-tenants stop
+
+  echo -n 'Backing up existing files ... '
+  mkdir install/backup/{init.d,conf,db}
+  cp /etc/init.d/redis-{server{,-base},tenants} install/backup/init.d
+  cp /etc/redis/{redis,tenant-*}.conf install/backup/conf
+  cp /var/lib/redis/{main,tenant-*}.{aof,rdb} install/backup/db
+
+  echo -n 'Copying init scripts ... '
+  cp install/redis-{server{,-base},tenants} /etc/init.d
+  echo "OK\n"
+
+  echo -n 'Copying configuration ... '
+  cp install/redis.conf /etc/redis
+  echo "OK\n"
+
+  echo -n 'Setting ownership and permissions ... '
+  chown root:root /etc/init.d/redis-{server{,-base},tenants}
+  chmod a+x /etc/init.d/redis-{server{,-base},tenants}
+  mkdir /etc/init.d/redis-{available,enabled}
+  chown redis:redis /etc/init.d/redis-{available,enabled}
+  chmod g+w /etc/redis /etc/init.d/redis-{available,enabled} /var/run/redis
+  echo "OK\n"
+  ;;
+
+'uninstall'*)
+  ensuresudo
+
+  case "$id" in
+  'hard'*)
+    echo -n 'Removing all traces of tenancy ... '
+    /etc/init.d/redis-tenants stop
+    /etc/init.d/redis-server stop
+    rm /var/log/redis/{main,tenant-*}
+    rm /var/lib/redis/{main,tenant-*}.{aof,rdb}
+    rm /etc/redis/{redis,tenant-*}.conf
+    echo "OK\n"
+    
+    echo -n 'Restoring configuration and databases ... '
+    cp install/backup/conf/* /etc/redis
+    cp install/backup/db/* /var/lib/redis
+
+    ;;
+
+  *)
+    echo 'Leaving Redis configuration, logs and databases.'
+    ;;
+
+  esac
+  
+  echo -n 'Deleting init scripts ... '
+  rm /etc/init.d/redis-{server{,-base},tenants}
+  echo "OK\n"
+
+  echo -n 'Restoring init scripts ... '
+  cp install/backup/init.d/* /etc/init.d
+  echo "OK\n"
+  ;;
 
 esac
 
