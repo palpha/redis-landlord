@@ -138,13 +138,15 @@ case $cmd in
   chown redis:redis /etc/init.d/redis-{available,enabled}
   chmod g+w /etc/redis /etc/init.d/redis-{available,enabled} /var/run/redis
   echo OK
+
+  /etc/init.d/redis-landlord start
   ;;
 
 'uninstall'*)
   ensuresudo
 
   if [[ $id == 'hard' ]]; then
-    echo -n 'Removing all traces of tenancy ... '
+    echo 'Removing all traces of tenancy ...'
 
     # stop instances
     test -x /etc/init.d/redis-landlord && /etc/init.d/redis-landlord stop
@@ -169,8 +171,6 @@ case $cmd in
     if exists /etc/redis/tenant-*.conf; then
       rm /etc/redis/tenant-*.conf
     fi
-
-    echo OK
 
     echo -n 'Restoring configuration and databases ... '
     if exists install/backup/conf/*; then

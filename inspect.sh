@@ -1,15 +1,34 @@
 #!/bin/bash
-echo Running:
+echo Backups
+echo =======
+ls install/backup/*
+echo
+
+echo Running
+echo =======
 ps aux | grep redis | grep -v grep
+echo
 
-echo Configuration:
+echo Init scripts
+echo ============
+ls -alF /etc/init.d/redis-*
+echo
+
+echo Configuration
+echo =============
 ls -alF /etc/redis
+echo
 
-echo Enabled:
+echo Enabled
+echo =======
 ls -alF /etc/init.d/redis-enabled
+echo
 
-echo Available:
+echo Available
+echo =========
 ls -alF /etc/init.d/redis-available
+echo
 
-echo PID:
+echo PID files
+echo =========
 ls -alF /var/run/redis
