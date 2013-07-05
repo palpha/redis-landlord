@@ -1,0 +1,7 @@
+include <confdir>/redis.conf
+dbfilename tenant-<id>.rdb
+appendfilename tenant-<id>.aof
+requirepass <id>
+pidfile /var/run/redis/tenant-<id>.pid
+port <port>
+logfile /var/log/redis/tenant-<id>.log

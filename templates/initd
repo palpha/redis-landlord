@@ -1,0 +1,21 @@
+#!/bin/sh
+### BEGIN INIT INFO
+# Provides:             redis-tenant-<id>
+# Required-Start:       $syslog $remote_fs
+# Required-Stop:        $syslog $remote_fs
+# Should-Start:         $local_fs
+# Should-Stop:          $local_fs
+# Default-Start:        2 3 4 5
+# Default-Stop:         0 1 6
+# Short-Description:    redis-server - Persistent key-value db
+# Description:          redis-server - Persistent key-value db
+### END INIT INFO
+
+. /etc/init.d/redis-server-base
+
+NAME=redis-tenant-<id>
+DESC=redis-tenant-<id>
+DAEMON_ARGS=/etc/redis/tenant-<id>.conf
+PIDFILE=$RUNDIR/tenant-<id>.pid
+
+run $1

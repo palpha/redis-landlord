@@ -40,12 +40,12 @@ case $cmd in
 
   # create config file
   echo -n "Writing configuration to $confdir/tenant-$id.conf ... "
-  sed "s/<id>/$id/g;s/<port>/$port/g;s/<confdir>/${confdir//\//\\/}/g" < templates/template.conf > $confdir/tenant-$id.conf
+  sed "s/<id>/$id/g;s/<port>/$port/g;s/<confdir>/${confdir//\//\\/}/g" < templates/conf > $confdir/tenant-$id.conf
   echo OK
 
   # create init script
   echo -n "Creating init script $available/$id ... "
-  sed "s/<id>/$id/g" < templates/template.initd > $available/$id
+  sed "s/<id>/$id/g" < templates/initd > $available/$id
   chmod a+x $available/$id
   ln -s $available/$id $enabled/$id
   echo OK
@@ -69,7 +69,7 @@ case $cmd in
   ;;
 
 'delete'*)
-  . $0 disable $1
+  . $0 disable $id
   echo -n "Deleting instance $id ... "
   rm $available/$id
   echo OK
