@@ -9,7 +9,7 @@
 set -e
 
 echoerr() { echo "$@" 1>&2; }
-ensuresudo() { [[ ! `whoami` == 'root' ]] && echoerr Sudo, please. && exit 4 }
+ensuresudo() { [[ ! `whoami` == 'root' ]] && echoerr Sudo, please. && exit 4; }
 
 cmds=("install" "uninstall" "setup" "disable" "enable" "delete")
 cmd=$1
