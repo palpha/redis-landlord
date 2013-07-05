@@ -114,15 +114,17 @@ case $cmd in
     echo -n 'Removing all traces of tenancy ... '
     /etc/init.d/redis-tenants stop
     /etc/init.d/redis-server stop
-    rm /var/log/redis/{main,tenant-*}
-    rm /var/lib/redis/{main,tenant-*}.{aof,rdb}
-    rm /etc/redis/{redis,tenant-*}.conf
+    rm /var/log/redis/main.log
+    rm /var/log/redis/tenant-*.log
+    rm /var/lib/redis/main.{aof,rdb}
+    rm /var/lib/redis/tenant-*.{aof,rdb}
+    rm /etc/redis/redis.conf
+    rm /etc/redis/tenant-*.conf
     echo "OK\n"
     
     echo -n 'Restoring configuration and databases ... '
     cp install/backup/conf/* /etc/redis
     cp install/backup/db/* /var/lib/redis
-
     ;;
 
   *)
@@ -141,5 +143,4 @@ case $cmd in
   ;;
 
 esac
-
 
