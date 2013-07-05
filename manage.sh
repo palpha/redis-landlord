@@ -15,6 +15,7 @@ ensuresudo() {
     exit 4
   fi
 }
+hasfiles() { ls -U $1/* &> /dev/null; }
 
 cmds=("install" "uninstall" "setup" "disable" "enable" "delete")
 cmd=$1
@@ -138,31 +139,49 @@ case $cmd in
 
   if [[ $id == 'hard' ]]; then
     echo -n 'Removing all traces of tenancy ... '
-    /etc/init.d/redis-landlord stop
-    /etc/init.d/redis-tenants stop
-    rm /var/log/redis/landlord.log
-    rm /var/log/redis/tenant-*.log
-    rm /var/lib/redis/landlord.{aof,rdb}
-    rm /var/lib/redis/tenant-*.{aof,rdb}
-    rm /etc/redis/landlord.conf
-    rm /etc/redis/tenant-*.conf
+    test -x /etc/init.d/redis-landlord && /etc/init.d/redis-landlord stop
+    test -x /etc/init.d/redis-tenants && /etc/init.d/redis-tenants stop
+    test -f /var/log/redis/landlord.log && rm /var/log/redis/landlord.log
+    if ls -U /var/log/redis/tenant-*.log &> /dev/null; then
+      rm /var/log/redis/tenant-*.log
+    fi
+    for file in /var/lib/redis/landlord.{aof,rdb}; do
+      test -f $file && rm $file
+    done
+    if ls -U /var/lib/redis/tenant-* &> /dev/null; then
+      rm /var/lib/redis/tenant-*
+    fi
+    test -x /etc/redis/landlord.conf && rm /etc/redis/landlord.conf
+    if ls -U /etc/redis/tenant-*.conf &> /dev/null; then
+      rm /etc/redis/tenant-*.conf
+    fi
     echo OK
 
     echo -n 'Restoring configuration and databases ... '
-    cp install/backup/conf/* /etc/redis
-    cp install/backup/db/* /var/lib/redis
+    if ls -U install/backup/conf/* &> /dev/null; then
+      cp install/backup/conf/* /etc/redis
+    fi
+    if ls -U install/backup/db/* &> /dev/null; then
+      cp install/backup/db/* /var/lib/redis
+    fi
+    echo OK
   else
     echo 'Leaving Redis configuration, logs and databases.'
   fi
 
-  esac
-
   echo -n 'Deleting init scripts ... '
-  rm /etc/init.d/redis-{landlord,server-base,tenants}
+  for file in /etc/init.d/redis-{landlord,server-base,tenants}; do
+    test -f $file && rm $file
+  done
+  for dir in /etc/init.d/redis-{available,enabled}; do
+    test -d $dir && rm -rf $dir
+  done
   echo OK
 
   echo -n 'Restoring init scripts ... '
-  cp install/backup/init.d/* /etc/init.d
+  if hasfiles install/backup/init.d; then
+    cp install/backup/init.d/* /etc/init.d
+  fi
   echo OK
   ;;
 
