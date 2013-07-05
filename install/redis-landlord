@@ -12,4 +12,10 @@
 ### END INIT INFO
 
 . /etc/init.d/redis-server-base
+
+DAEMON_ARGS=/etc/redis/landlord.conf
+NAME=redis-landlord
+DESC=redis-landlord
+PIDFILE=$RUNDIR/redis-landlord.pid
+
 run $1
