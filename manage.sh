@@ -5,6 +5,7 @@
 # 2) invalid id
 # 3) invalid port
 # 4) sudo required
+# 5) already installed
 
 set -e
 
@@ -15,7 +16,7 @@ ensuresudo() {
     exit 4
   fi
 }
-hasfiles() { ls -U $1/* &> /dev/null; }
+exists() { ls -U $1 &> /dev/null; }
 
 cmds=("install" "uninstall" "setup" "disable" "enable" "delete")
 cmd=$1
@@ -84,7 +85,7 @@ case $cmd in
   ;;
 
 'delete'*)
-  . $0 disable $id
+  ./$0 disable $id
   echo -n "Deleting instance $id ... "
   rm $available/$id
   echo OK
@@ -92,6 +93,11 @@ case $cmd in
 
 'install'*)
   ensuresudo
+
+  if [[ -x /etc/init.d/redis-landlord && $id != 'force' ]]; then
+    echoerr Landlord already installed, you probably want to uninstall first.
+    exit 5
+  fi
 
   test -x /etc/init.d/redis-landlord && /etc/init.d/redis-landlord stop
   test -x /etc/init.d/redis-tenants && /etc/init.d/redis-tenants stop
@@ -104,13 +110,13 @@ case $cmd in
     test -f $file && cp $file install/backup/init.d
   done
   test -f /etc/redis/landlord.conf && cp /etc/redis/landlord.conf install/backup/conf
-  if ls -U /var/lib/redis/tenant-*.conf &> /dev/null; then
+  if exists /etc/redis/tenant-*.conf; then
     cp /etc/redis/tenant-*.conf install/backup/conf
   fi
   for file in /var/lib/redis/landlord.{aof,rdb}; do
     test -f $file && cp $file install/backup/db
   done
-  if ls -U /var/lib/redis/tenant-* &> /dev/null; then
+  if exists /var/lib/redis/tenant-*; then
     cp /var/lib/redis/tenant-* install/backup/db
   fi
   echo OK
@@ -139,29 +145,38 @@ case $cmd in
 
   if [[ $id == 'hard' ]]; then
     echo -n 'Removing all traces of tenancy ... '
+
+    # stop instances
     test -x /etc/init.d/redis-landlord && /etc/init.d/redis-landlord stop
     test -x /etc/init.d/redis-tenants && /etc/init.d/redis-tenants stop
+
+    # remove logs
     test -f /var/log/redis/landlord.log && rm /var/log/redis/landlord.log
-    if ls -U /var/log/redis/tenant-*.log &> /dev/null; then
+    if exists /var/log/redis/tenant-*.log; then
       rm /var/log/redis/tenant-*.log
     fi
+
+    # remove dbs
     for file in /var/lib/redis/landlord.{aof,rdb}; do
       test -f $file && rm $file
     done
-    if ls -U /var/lib/redis/tenant-* &> /dev/null; then
+    if exists /var/lib/redis/tenant-*; then
       rm /var/lib/redis/tenant-*
     fi
-    test -x /etc/redis/landlord.conf && rm /etc/redis/landlord.conf
-    if ls -U /etc/redis/tenant-*.conf &> /dev/null; then
+
+    # remove config
+    test -f /etc/redis/landlord.conf && rm /etc/redis/landlord.conf && echo removed
+    if exists /etc/redis/tenant-*.conf; then
       rm /etc/redis/tenant-*.conf
     fi
+
     echo OK
 
     echo -n 'Restoring configuration and databases ... '
-    if ls -U install/backup/conf/* &> /dev/null; then
+    if exists install/backup/conf/*; then
       cp install/backup/conf/* /etc/redis
     fi
-    if ls -U install/backup/db/* &> /dev/null; then
+    if exists install/backup/db/*; then
       cp install/backup/db/* /var/lib/redis
     fi
     echo OK
@@ -179,7 +194,7 @@ case $cmd in
   echo OK
 
   echo -n 'Restoring init scripts ... '
-  if hasfiles install/backup/init.d; then
+  if exists install/backup/init.d/*; then
     cp install/backup/init.d/* /etc/init.d
   fi
   echo OK
