@@ -41,13 +41,14 @@ pinginst() {
   i=0
   while :
   do
-    echo Pinging
-    set +e
-    r=( [[ "`redis-cli -a $1 -p $2 ping`" == 'PONG' ]] )
-    n=( [[ `let i++` -gt 10 ]] )
-    set -e
-    $r && return 1
-    $n && return 0
+    if [[ "`redis-cli -a $1 -p $2 ping`" == 'PONG' ]]; then
+      return 0
+    fi
+
+    if [[ `let i++` -gt 10 ]]; then
+      return 1
+    fi
+    
     sleep 0.1
   done
 }
@@ -131,6 +132,7 @@ setup)
   echo -n 'Pinging new instance ... '
   sleep 1
 
+  set +e
   pinginst $id $port
   if [[ ! $? ]]; then
     echo OK
@@ -242,6 +244,7 @@ install)
   /etc/init.d/redis-landlord start
 
   echo -n 'Pinging landlord instance ... '
+  set +e
   pinginst
   [[ ! $? ]] && echo NOT OK || echo OK
 
