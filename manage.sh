@@ -94,7 +94,8 @@ if [[ ! " ${cmds[@]} " =~ " ${cmd//[^a-z]/} " ]]; then
 fi
 
 validateid() {
-  if [[ ! $id =~ ^[a-z0-9]*$ || $id == "" ]]; then
+  re="^[-_a-zA-Z0-9]*$"
+  if [[ ! $id =~ $re || $id == "" ]]; then
     echoerr 'Invalid id.'
     exit 2
   fi
