@@ -45,10 +45,11 @@ pinginst() {
       return 0
     fi
 
-    if [[ `let i++` -gt 10 ]]; then
+    let i++
+    if [[ $i -gt 50 ]]; then
       return 1
     fi
-    
+
     sleep 0.1
   done
 }
@@ -134,8 +135,9 @@ setup)
 
   set +e
   pinginst $id $port
-  if [[ ! $? ]]; then
+  if [[ $? ]]; then
     echo OK
+    echo -e "SET landlord:tenant:$id:port $port\nSADD landlord:tenants $id" | redis-cli -a landlord -p 6380 > /dev/null
   else
     echo NOT OK
     echo -n "Cleaning up ... "
@@ -188,6 +190,7 @@ delete)
   set -e
   echo -n "Deleting instance $id ... "
   rm $available/$id
+  echo -e "DEL landlord:tenant:$id:port\nSREM landlord:tenants $id" | redis-cli -a landlord -p 6380 > /dev/null
   echo OK
   ;;
 
