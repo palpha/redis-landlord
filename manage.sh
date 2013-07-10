@@ -19,6 +19,17 @@ set -e
 
 isinstalled=([ -x /etc/init.d/redis-landlord ])
 
+cmds=("install" "uninstall" "setup" "disable" "enable" "delete")
+cmd=$1
+id=$2
+available=/etc/init.d/redis-available
+enabled=/etc/init.d/redis-enabled
+bootstrapper=/etc/init.d/redis-tenants
+confdir=/etc/redis
+
+scriptpath="`dirname \"$0\"`"
+scriptpath="`( cd \"$scriptpath\" && pwd )`/`basename \"$0\"`"
+
 echoerr() { echo "$@" 1>&2; }
 exists() { ls -U $1 &> /dev/null; }
 ensureinstalled() {
@@ -30,7 +41,7 @@ ensureinstalled() {
 }
 
 ensureinstexists() {
-  if [[ ! -x "/etc/init.d/redis-available/$1" ]]; then
+  if [[ ! -x "$available/$1" ]]; then
     echoerr $id does not exist.
     echo "Run \"`basename \"$0\"` setup $id <port>\" to create."
     exit 9
@@ -53,17 +64,6 @@ pinginst() {
     sleep 0.1
   done
 }
-
-cmds=("install" "uninstall" "setup" "disable" "enable" "delete")
-cmd=$1
-id=$2
-available=/etc/init.d/redis-available
-enabled=/etc/init.d/redis-enabled
-bootstrapper=/etc/init.d/redis-tenants
-confdir=/etc/redis
-
-scriptpath="`dirname \"$0\"`"
-scriptpath="`( cd \"$scriptpath\" && pwd )`/`basename \"$0\"`"
 
 if [[ ! `whoami` == 'root' ]]; then
   echoerr This script needs to be run as a superuser.
@@ -106,10 +106,15 @@ case "$cmd" in
 setup)
   ensureinstalled
   validateid
-  if [[ -x "/etc/init.d/redis-available/$id" ]]; then
+  isavailable=([ -x "$available/$id" ])
+  isenabled=([ -x "$enabled/$id" ])
+  if $isenabled; then
     echoerr $id already exists.
-    echo "Run \"`basename \"$0\"` enable\" to enable."
     exit 7
+  elif $isavailable; then
+    echoerr $id already exists, but is disabled.
+    echo "Run \"`basename \"$0\"` enable\" to enable."
+    exit 8
   fi
 
   port=$3
@@ -129,7 +134,7 @@ setup)
   echo OK
 
   echo Running bootstrapper ...
-  $bootstrapper start
+  $enabled/$id start
 
   echo -n 'Pinging new instance ... '
   sleep 1
@@ -163,7 +168,7 @@ disable)
   fi
 
   echo Stopping and disabling instance $id ...
-  /etc/init.d/redis-enabled/$id stop && rm $enabled/$id
+  $enabled/$id stop && rm $enabled/$id
   ;;
 
 enable)
@@ -172,11 +177,11 @@ enable)
   ensureinstexists $id
 
   echo -n "Enabling instance $id ..."
-  [[ ! -x "$available/$id" ]] && ln -s $available/$id $enabled/$id
+  [[ ! -x "$enabled/$id" ]] && ln -s $available/$id $enabled/$id
   echo OK
 
   echo Running bootstrapper ...
-  $bootstrapper start
+  $enabled/$id start
 
   echo "$id enabled."
   ;;
@@ -191,6 +196,10 @@ delete)
   set -e
   echo -n "Deleting instance $id ... "
   rm $available/$id
+  port=`redis-cli -a landlord -p 6380 GET landlord:tenant:$id:port`
+  if [[ $port != "" ]]; then
+    echo -e "SREM landlord:ports:occupied $port" | redis-cli -a landlord -p 6380 > /dev/null
+  fi
   echo -e "DEL landlord:tenant:$id:port\nSREM landlord:tenants $id" | redis-cli -a landlord -p 6380 > /dev/null
   echo OK
   ;;
@@ -239,9 +248,9 @@ install)
   echo -n 'Setting ownership and permissions ... '
   chown root:root /etc/init.d/redis-{landlord,server-base,tenants}
   chmod a+x /etc/init.d/redis-{landlord,server-base,tenants}
-  for dir in /etc/init.d/redis-{available,enabled}; do
-    [[ ! -d $dir ]] && mkdir $dir
-  done
+  [[ ! -d $available ]] && mkdir $available
+  [[ ! -d $enabled ]] && mkdir $enabled 
+
   echo OK
 
   echo Starting landlord ...
@@ -304,9 +313,10 @@ uninstall)
   for file in /etc/init.d/redis-{landlord,server-base,tenants}; do
     test -f $file && rm $file
   done
-  for dir in /etc/init.d/redis-{available,enabled}; do
-    test -d $dir && rm -rf $dir
-  done
+
+  test -d $available && rm -rf $available
+  test -d $enabled && rm -rf $enabled
+
   echo OK
 
   echo -n 'Restoring init scripts ... '
