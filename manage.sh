@@ -253,6 +253,11 @@ install)
 
   echo OK
 
+  echo -n 'Adding landlord to boot sequence ... '
+  update-rc.d redis-landlord defaults
+  update-rc.d redis-tenants defaults
+  echo OK
+
   echo Starting landlord ...
   /etc/init.d/redis-landlord start
 
@@ -269,6 +274,10 @@ install)
 uninstall)
   if [[ $id == 'hard' ]]; then
     echo 'Removing all traces of tenancy ...'
+
+    # remove from boot
+    test -x /etc/init.d/redis-landlord && update-rc.d redis-landlord remove
+    test -x /etc/init.d/redis-tenants && update-rc.d redis-tenants remove
 
     # stop instances
     test -x /etc/init.d/redis-landlord && /etc/init.d/redis-landlord stop
