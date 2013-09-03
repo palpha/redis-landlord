@@ -2,7 +2,7 @@
 
 PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
 DAEMON=/usr/bin/redis-server
-RUNDIR=/var/run/redis
+RUNDIR=<rundir>
 
 test -x $DAEMON || exit 0
 

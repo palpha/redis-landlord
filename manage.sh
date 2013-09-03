@@ -1,9 +1,8 @@
 #!/bin/bash
 
 # To do:
-#   update-rc.d
 #   thread safety
-#   PubSub instead of HTTP
+#   handle redis-landlord downtime
 
 # exit codes:
 # 1) invalid command
@@ -17,15 +16,24 @@
 
 set -e
 
-isinstalled=([ -x /etc/init.d/redis-landlord ])
+prefix=${LANDLORD_PREFIX}
+initd=${LANDLORD_INITD_DIR:-$prefix/etc/init.d}
+confdir=${LANDLORD_ETC_DIR:-$prefix/etc/redis}
+dbdir=${LANDLORD_DB_DIR:-$prefix/var/lib/redis}
+logdir=${LANDLORD_LOG_DIR:-$prefix/var/log/redis}
+rundir=${LANDLORD_RUN_DIR:-$prefix/var/run/redis}
+pidfile=${LANDLORD_PID_FILE:-redis-landlord.pid}
+pidpath=$rundir/$pidfile
+landlordport=${LANDLORD_PORT:-6380}
+
+isinstalled=([ -x $initd/redis-landlord ])
 
 cmds=("install" "uninstall" "setup" "disable" "enable" "delete")
 cmd=$1
 id=$2
-available=/etc/init.d/redis-available
-enabled=/etc/init.d/redis-enabled
-bootstrapper=/etc/init.d/redis-tenants
-confdir=/etc/redis
+available=$initd/redis-available
+enabled=$initd/redis-enabled
+bootstrapper=$initd/redis-tenants
 
 scriptpath="`dirname \"$0\"`"
 scriptpath="`( cd \"$scriptpath\" && pwd )`/`basename \"$0\"`"
@@ -33,7 +41,7 @@ scriptpath="`( cd \"$scriptpath\" && pwd )`/`basename \"$0\"`"
 echoerr() { echo "$@" 1>&2; }
 exists() { ls -U $1 &> /dev/null; }
 ensureinstalled() {
-  if [[ ! $isinstalled ]]; then
+  if ! $isinstalled; then
     echoerr Landlord not installed.
     echo "Run \"`basename \"$0\"` install\"."
     exit 6
@@ -89,6 +97,9 @@ if [[ ! " ${cmds[@]} " =~ " ${cmd//[^a-z]/} " ]]; then
   echo "  uninstall [hard]   Uninstalls init scripts, and optionally"
   echo "                     everything else (if hard). Use with"
   echo "                     extreme care."
+  echo ""
+  echo "If landlord should use a non-standard port, set LANDLORD_PORT. Eg:"
+  echo "  env LANDLORD_PORT=5678 `basename \"$0\"` install"
   IFS=$old_ifs
   exit 1
 fi
@@ -99,6 +110,15 @@ validateid() {
     echoerr 'Invalid id.'
     exit 2
   fi
+}
+
+cleanup() {
+    echo -n "Cleaning up ... "
+    $enabled/$id stop
+    rm $confdir/tenant-$id.conf
+    rm $enabled/$id
+    rm $available/$id
+    echo OK
 }
 
 case "$cmd" in
@@ -143,17 +163,20 @@ setup)
   pinginst $id $port
   if [[ $? ]]; then
     echo OK
-    echo -e "SET landlord:tenant:$id:port $port\nSADD landlord:tenants $id" | redis-cli -a landlord -p 6380 > /dev/null
+    echo -n 'Adding to landlord database ... '
+    if [[ `echo -e "SET landlord:tenant:$id:port $port\nSADD landlord:tenants $id" | redis-cli -a landlord -p $landlordport > /dev/null` ]]; then
+      echo OK
+
+      echo Log says:
+      tail -1 $logdir/tenant-$id.log
+    else
+      echo NOT OK
+      cleanup
+    fi
   else
     echo NOT OK
-    echo -n "Cleaning up ... "
-    rm $confdir/tenant-$id.conf
-    rm $enabled/$id
-    rm $available/$id
+    cleanup
   fi
-
-  echo Log says:
-  tail -1 /var/log/redis/tenant-$id.log
   
   ;;
 
@@ -196,11 +219,11 @@ delete)
   set -e
   echo -n "Deleting instance $id ... "
   rm $available/$id
-  port=`redis-cli -a landlord -p 6380 GET landlord:tenant:$id:port`
+  port=`redis-cli -a landlord -p $landlordport GET landlord:tenant:$id:port`
   if [[ $port != "" ]]; then
-    echo -e "SREM landlord:ports:occupied $port" | redis-cli -a landlord -p 6380 > /dev/null
+    echo -e "SREM landlord:ports:occupied $port" | redis-cli -a landlord -p $landlordport > /dev/null
   fi
-  echo -e "DEL landlord:tenant:$id:port\nSREM landlord:tenants $id" | redis-cli -a landlord -p 6380 > /dev/null
+  echo -e "DEL landlord:tenant:$id:port\nSREM landlord:tenants $id" | redis-cli -a landlord -p $landlordport > /dev/null
   echo OK
   ;;
 
@@ -210,8 +233,8 @@ install)
     exit 5
   fi
 
-  [[ -x /etc/init.d/redis-landlord ]] && /etc/init.d/redis-landlord stop
-  [[ -x /etc/init.d/redis-tenants ]] && /etc/init.d/redis-tenants stop
+  [[ -x $initd/redis-landlord ]] && $initd/redis-landlord stop
+  [[ -x $initd/redis-tenants ]] && $initd/redis-tenants stop
 
   echo -n 'Backing up existing files ... '
 
@@ -221,33 +244,52 @@ install)
   done
 
   # init scripts
-  for file in /etc/init.d/redis-{landlord,server-base,tenants}; do
+  for file in $initd/redis-{landlord,server-base,tenants}; do
     [[ -f $file ]] && cp $file install/backup/init.d
   done
 
   # config
-  [[ -f /etc/redis/landlord.conf ]] && cp /etc/redis/landlord.conf install/backup/conf
-  exists /etc/redis/tenant-*.conf && cp /etc/redis/tenant-*.conf install/backup/conf
+  [[ -f $confdir/landlord.conf ]] && cp $confdir/landlord.conf install/backup/conf
+  exists $confdir/tenant-*.conf && cp $confdir/tenant-*.conf install/backup/conf
 
   # databases
-  for file in /var/lib/redis/landlord.{aof,rdb}; do
+  for file in $dbdir/landlord.{aof,rdb}; do
     test -f $file && cp $file install/backup/db
   done
-  exists /var/lib/redis/tenant-* && cp /var/lib/redis/tenant-* install/backup/db
+  exists $dbdir/tenant-* && cp $dbdir/tenant-* install/backup/db
 
   echo OK
 
+  if [[ ! -d $confdir ]]; then
+    mkdir -p $confdir
+    chown redis:redis $confdir
+  fi
+
+  if [[ ! -d $dbdir ]]; then
+    mkdir -p $dbdir
+    chown redis:redis $dbdir
+  fi
+
+  if [[ ! -d $logdir ]]; then
+    mkdir -p $logdir
+    chown redis:redis $logdir
+  fi
+
+  [[ -d $initd ]] || mkdir -p $initd
+
   echo -n 'Writing init scripts ... '
-  cp install/redis-{landlord,server-base,tenants} /etc/init.d
+  sed "s/<initd>/${initd//\//\\/}/g;s/<confdir>/${confdir//\//\\/}/g;s/<pidfile>/${pidfile}/g" < install/redis-landlord > $initd/redis-landlord
+  sed "s/<rundir>/${rundir//\//\\/}/g" < install/redis-server-base > $initd/redis-server-base
+  sed "s/<initd>/${initd//\//\\/}/g" < install/redis-tenants > $initd/redis-tenants
   echo OK
 
   echo -n 'Writing configuration ... '
-  cp install/landlord.conf /etc/redis
+  sed "s/<port>/$landlordport/g;s/<logdir>/${logdir//\//\\/}/g;s/<dbdir>/${dbdir//\//\\/}/g;s/<pidpath>/${pidpath//\//\\/}/g" < install/landlord.conf > $confdir/landlord.conf
   echo OK
 
   echo -n 'Setting ownership and permissions ... '
-  chown root:root /etc/init.d/redis-{landlord,server-base,tenants}
-  chmod a+x /etc/init.d/redis-{landlord,server-base,tenants}
+  chown root:root $initd/redis-{landlord,server-base,tenants}
+  chmod a+x $initd/redis-{landlord,server-base,tenants}
   [[ ! -d $available ]] && mkdir $available
   [[ ! -d $enabled ]] && mkdir $enabled 
 
@@ -259,67 +301,77 @@ install)
   echo OK
 
   echo Starting landlord ...
-  /etc/init.d/redis-landlord start
+  $initd/redis-landlord start
 
   echo -n 'Pinging landlord instance ... '
   set +e
-  pinginst
-  [[ ! $? ]] && echo NOT OK || echo OK
+  pinginst landlord $landlordport
+  if [[ $? ]]; then
+   echo OK
+  else
+   echo NOT OK
+  fi
 
   echo Log says:
-  tail -1 /var/log/redis/landlord.log
+  tail -1 $logdir/landlord.log
 
   ;;
 
 uninstall)
+
   if [[ $id == 'hard' ]]; then
     echo 'Removing all traces of tenancy ...'
 
     # remove from boot
-    test -x /etc/init.d/redis-landlord && update-rc.d redis-landlord remove
-    test -x /etc/init.d/redis-tenants && update-rc.d redis-tenants remove
+    test -x $initd/redis-landlord && update-rc.d redis-landlord remove
+    test -x $initd/redis-tenants && update-rc.d redis-tenants remove
 
     # stop instances
-    test -x /etc/init.d/redis-landlord && /etc/init.d/redis-landlord stop
-    test -x /etc/init.d/redis-tenants && /etc/init.d/redis-tenants stop
+    test -x $initd/redis-landlord && $initd/redis-landlord stop
+    test -x $initd/redis-tenants && $initd/redis-tenants stop
 
     # remove logs
-    test -f /var/log/redis/landlord.log && rm /var/log/redis/landlord.log
-    if exists /var/log/redis/tenant-*.log; then
-      rm /var/log/redis/tenant-*.log
+    test -f $logdir/landlord.log && rm $logdir/landlord.log
+    if exists $logdir/tenant-*.log; then
+      rm $logdir/tenant-*.log
     fi
 
     # remove dbs
-    for file in /var/lib/redis/landlord.{aof,rdb}; do
+    for file in $dbdir/landlord.{aof,rdb}; do
       test -f $file && rm $file
     done
-    if exists /var/lib/redis/tenant-*; then
-      rm /var/lib/redis/tenant-*
+    if exists $dbdir/tenant-*; then
+      rm $dbdir/tenant-*
     fi
 
     # remove config
-    test -f /etc/redis/landlord.conf && rm /etc/redis/landlord.conf && echo removed
-    if exists /etc/redis/tenant-*.conf; then
-      rm /etc/redis/tenant-*.conf
+    test -f $confdir/landlord.conf && rm $confdir/landlord.conf && echo removed
+    if exists $confdir/tenant-*.conf; then
+      rm $confdir/tenant-*.conf
     fi
 
     echo -n 'Restoring configuration and databases ... '
     if exists install/backup/conf/*; then
-      cp install/backup/conf/* /etc/redis
+      cp install/backup/conf/* $confdir
     fi
     if exists install/backup/db/*; then
-      cp install/backup/db/* /var/lib/redis
+      cp install/backup/db/* $dbdir
     fi
     echo OK
-  elif [[ ! -x /etc/init.d/redis-landlord ]]; then
+  elif [[ ! -x $initd/redis-landlord ]]; then
     echoerr Landlord not installed or installation broken.
     exit 6
   else
     echo 'Leaving Redis configuration, logs and databases.'
+
+    echo 'Stopping tenants and landlord ...'
+    test -x $initd/redis-landlord && $initd/redis-landlord stop
+    test -x $initd/redis-tenants && $initd/redis-tenants stop
+    echo 'OK'
   fi
 
   echo -n 'Deleting init scripts ... '
-  for file in /etc/init.d/redis-{landlord,server-base,tenants}; do
+  for file in $initd/redis-{landlord,server-base,tenants}; do
     test -f $file && rm $file
   done
 
@@ -330,7 +382,7 @@ uninstall)
 
   echo -n 'Restoring init scripts ... '
   if exists install/backup/init.d/*; then
-    cp install/backup/init.d/* /etc/init.d
+    cp install/backup/init.d/* $initd
   fi
   echo OK
   ;;

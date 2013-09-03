@@ -1,5 +1,5 @@
 #!/bin/bash
-enabled=/etc/init.d/redis-enabled
+enabled=<initd>/redis-enabled
 
 for file in `ls -1 $enabled`; do
   file="$enabled/$file"

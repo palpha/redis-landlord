@@ -11,11 +11,11 @@
 # Description:          redis-server - Persistent key-value db
 ### END INIT INFO
 
-. /etc/init.d/redis-server-base
+. <initd>/redis-server-base
 
-DAEMON_ARGS=/etc/redis/landlord.conf
+DAEMON_ARGS=<confdir>/landlord.conf
 NAME=redis-landlord
 DESC=redis-landlord
-PIDFILE=$RUNDIR/redis-landlord.pid
+PIDFILE=$RUNDIR/<pidfile>
 
 run $1
