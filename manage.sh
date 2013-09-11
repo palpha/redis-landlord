@@ -163,8 +163,8 @@ setup)
   pinginst $id $port
   if [[ $? ]]; then
     echo OK
-    echo -n 'Adding to landlord database ... '
-    if [[ `echo -e "SET landlord:tenant:$id:port $port\nSADD landlord:tenants $id" | redis-cli -a landlord -p $landlordport > /dev/null` ]]; then
+    echo -n "Adding to landlord database (localhost:$landlordport) ... "
+    if [[ `echo -e "SET landlord:tenant:$id:port $port\nSADD landlord:tenants $id" | redis-cli -a landlord -p $landlordport` ]]; then
       echo OK
 
       echo Log says:
